@@ -6,11 +6,11 @@ Usage:
     python repo_switcher.py --repos all --visibility public
     python repo_switcher.py --repos seo,pinterest --visibility private --delay-minutes 5
 
-Repos shorthand:
-    all        → meeeshop-seo, meeeshop-pinterest, meeeshop-youtube
-    seo        → MeeeShop/meeeshop-seo
-    pinterest  → MeeeShop/meeeshop-pinterest
-    youtube    → MeeeShop/meeeshop-youtube
+Repos shorthand (aliases resolved from secrets.enc at runtime):
+    all        → all repos defined in secrets.enc
+    seo        → REPO_SEO value in secrets.enc
+    pinterest  → REPO_PINTEREST value in secrets.enc
+    youtube    → REPO_YOUTUBE value in secrets.enc
 """
 
 import argparse
@@ -29,13 +29,18 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-OWNER = "MeeeShop"
 
-REPO_MAP = {
-    "seo":       "meeeshop-seo",
-    "pinterest": "meeeshop-pinterest",
-    "youtube":   "meeeshop-youtube",
-}
+def _load_config():
+    from secrets_manager import get_secret
+    return {
+        "owner": get_secret("GITHUB_OWNER"),
+        "token": get_secret("GITHUB_PAT"),
+        "repo_map": {
+            "seo":       get_secret("REPO_SEO"),
+            "pinterest": get_secret("REPO_PINTEREST"),
+            "youtube":   get_secret("REPO_YOUTUBE"),
+        },
+    }
 
 
 def parse_args():
@@ -60,21 +65,21 @@ def parse_args():
     return p.parse_args()
 
 
-def resolve_repos(repos_arg: str) -> list[str]:
+def resolve_repos(repos_arg: str, repo_map: dict) -> list[str]:
     if repos_arg.strip().lower() == "all":
-        return list(REPO_MAP.values())
+        return list(repo_map.values())
     names = [r.strip().lower() for r in repos_arg.split(",")]
     resolved = []
     for name in names:
-        if name not in REPO_MAP:
-            log.error("Unknown repo alias '%s'. Valid: %s", name, list(REPO_MAP.keys()))
+        if name not in repo_map:
+            log.error("Unknown repo alias '%s'. Valid: %s", name, list(repo_map.keys()))
             sys.exit(1)
-        resolved.append(REPO_MAP[name])
+        resolved.append(repo_map[name])
     return resolved
 
 
-def set_visibility(repo: str, visibility: str, token: str) -> bool:
-    url = f"https://api.github.com/repos/{OWNER}/{repo}"
+def set_visibility(owner: str, repo: str, visibility: str, token: str) -> bool:
+    url = f"https://api.github.com/repos/{owner}/{repo}"
     payload = json.dumps({"visibility": visibility}).encode()
     req = urllib.request.Request(
         url,
@@ -91,21 +96,20 @@ def set_visibility(repo: str, visibility: str, token: str) -> bool:
         with urllib.request.urlopen(req) as resp:
             body = json.loads(resp.read().decode())
             actual = body.get("visibility", "unknown")
-            log.info("[OK] %s/%s → %s", OWNER, repo, actual)
+            log.info("[OK] %s/%s → %s", owner, repo, actual)
             return True
     except urllib.error.HTTPError as e:
         body = e.read().decode()
-        log.error("[FAIL] %s/%s — HTTP %s: %s", OWNER, repo, e.code, body)
+        log.error("[FAIL] %s/%s — HTTP %s: %s", owner, repo, e.code, body)
         return False
 
 
 def main():
     args = parse_args()
+    cfg = _load_config()
+    owner, token, repo_map = cfg["owner"], cfg["token"], cfg["repo_map"]
 
-    from secrets_manager import get_secret
-    token = get_secret("GITHUB_PAT")
-
-    repos = resolve_repos(args.repos)
+    repos = resolve_repos(args.repos, repo_map)
 
     if args.delay_minutes > 0:
         fire_at = datetime.now(timezone.utc)
@@ -121,7 +125,7 @@ def main():
 
     results = {}
     for repo in repos:
-        results[repo] = set_visibility(repo, args.visibility, token)
+        results[repo] = set_visibility(owner, repo, args.visibility, token)
 
     failed = [r for r, ok in results.items() if not ok]
     if failed:

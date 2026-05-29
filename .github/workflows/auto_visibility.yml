@@ -5,12 +5,12 @@ name: Auto Visibility (Scheduled)
 # that actually have workflows scheduled at that time. ALL TIMES UTC.
 #
 # Source schedules (verified 2026-05-29):
-#   meeeshop-pinterest : 01:00, 01:30, 12:00, 12:30, 17:00, 17:30, 21:00, 21:30
-#   meeeshop-seo       : 03:00(daily), 06:00(daily), 07:00(daily+Sun), 08:00(Sun),
-#                        13:00(Tue/Thu), 14:00(Sat/Sun)
-#   meeeshop-youtube   : 08:00(MWF blog_automation), 09:00(daily price_update),
-#                        10:00(MWF blog-weekly), 13:00(daily YT shorts),
-#                        14:00(daily pinterest-video), 15:30(daily pinterest-video)
+#   REPO_PINTEREST : 01:00, 01:30, 12:00, 12:30, 17:00, 17:30, 21:00, 21:30
+#   REPO_SEO       : 03:00(daily), 06:00(daily), 07:00(daily+Sun), 08:00(Sun),
+#                    13:00(Tue/Thu), 14:00(Sat/Sun)
+#   REPO_YOUTUBE   : 08:00(MWF blog_automation), 09:00(daily price_update),
+#                    10:00(MWF blog-weekly), 13:00(daily YT shorts),
+#                    14:00(daily video), 15:30(daily video)
 #
 # Window map (open 1hr before first job, close 1hr after last job):
 #   00:00–02:30  pinterest only         (01:00 posting+video, 01:30 refresh)

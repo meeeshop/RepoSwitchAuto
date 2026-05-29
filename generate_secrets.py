@@ -82,18 +82,26 @@ def main():
             existing = json.load(f)
         print(f"Existing secrets.enc found with keys: {list(existing.keys())}")
 
-    print("\nEnter your GitHub Personal Access Token (classic, repo scope).")
-    print("Leave blank to skip and keep existing value.\n")
+    print("\nEnter values below. Leave blank to keep existing value.\n")
 
-    pat = input("GITHUB_PAT: ").strip()
-    if not pat and "GITHUB_PAT" in existing:
-        print("Keeping existing GITHUB_PAT.")
-    elif pat:
-        existing["GITHUB_PAT"] = _double_encrypt(pat, primary, fallback)
-        print("GITHUB_PAT encrypted.")
-    else:
-        print("ERROR: GITHUB_PAT is required.")
-        sys.exit(1)
+    fields = [
+        ("GITHUB_PAT",      "GitHub Personal Access Token (classic, repo scope)", True),
+        ("GITHUB_OWNER",    "GitHub owner/org username (e.g. your-github-username)", True),
+        ("REPO_SEO",        "SEO repo name (just the repo name, no owner prefix)", True),
+        ("REPO_PINTEREST",  "Pinterest repo name", True),
+        ("REPO_YOUTUBE",    "YouTube repo name", True),
+    ]
+
+    for key, label, required in fields:
+        val = input(f"{key} [{label}]: ").strip()
+        if not val and key in existing:
+            print(f"  Keeping existing {key}.")
+        elif val:
+            existing[key] = _double_encrypt(val, primary, fallback)
+            print(f"  {key} encrypted.")
+        elif required:
+            print(f"ERROR: {key} is required.")
+            sys.exit(1)
 
     with open(VAULT_FILE, "w", encoding="utf-8") as f:
         json.dump(existing, f, indent=2)
