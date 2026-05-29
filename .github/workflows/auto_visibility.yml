@@ -1,25 +1,74 @@
 name: Auto Visibility (Scheduled)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Scheduled open/close window for all 3 MeeeShop automation repos.
+# Tight open/close windows — repos go public 1hr before each workflow cluster
+# and private 1hr after the last job in that cluster finishes.
 #
-# Timeline (UTC):
-#   02:00  → Make ALL repos PUBLIC  (1hr before earliest SEO cron at 03:00)
-#   16:00  → Make ALL repos PRIVATE (after last daily workflow at ~15:30)
+# ALL TIMES UTC. Clusters derived from actual cron schedules in:
+#   meeeshop-pinterest, meeeshop-seo, meeeshop-youtube
 #
-# This keeps repos public for a ~14hr window each day so every scheduled
-# workflow across seo, pinterest, and youtube can fire normally.
-# Disable this repo entirely when you're on a paid plan or don't need it.
+# Cluster 1  — Pinterest night    : open 00:00, close 02:30
+#   pinterest: 01:00 (posting + video), 01:30 (refresh)
+#
+# Cluster 2  — SEO schema         : open 02:00, close 04:00
+#   SEO:       03:00 (schema_validation_daily)
+#
+# Cluster 3  — SEO daily          : open 05:00, close 08:30
+#   SEO:       06:00 (seo_daily), 07:00 (price_update + internal_linker Sun)
+#   SEO:       08:00 Sun (seo_daily weekly + price_update weekly)
+#
+# Cluster 4  — YouTube morning    : open 07:00, close 10:00
+#   YouTube:   08:00 MWF (blog_automation), 09:00 (price_update)
+#
+# Cluster 5  — Midday/afternoon   : open 11:00, close 16:30
+#   Pinterest: 12:00 (posting + video), 12:30 (refresh)
+#   YouTube:   13:00 (youtube_daily), 14:00 (pinterest_posting), 15:30 (video)
+#   SEO:       13:00 Tue/Thu (blog_daily), 14:00 Sat/Sun (blog_daily + modify_blog)
+#
+# Cluster 6  — Pinterest afternoon: open 16:00, close 18:30
+#   Pinterest: 17:00 (posting), 17:30 (refresh)
+#
+# Cluster 7  — Pinterest evening  : open 20:00, close 22:30
+#   Pinterest: 21:00 (posting), 21:30 (refresh)
+#
+# NOTE: Clusters 3 & 4 overlap on Sun/MWF — repos stay public 05:00–10:00
+#       on those days which is fine (still a tight window vs all-day open).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
-    - cron: '0 2 * * *'    # 02:00 UTC daily — open window (make public)
-    - cron: '0 16 * * *'   # 16:00 UTC daily — close window (make private)
+    # ── Cluster 1: Pinterest night ──────────────────────────────────────────
+    - cron: '0 0 * * *'     # 00:00 UTC → PUBLIC  (pinterest night open)
+    - cron: '30 2 * * *'    # 02:30 UTC → PRIVATE (after 01:30 refresh done)
+
+    # ── Cluster 2: SEO schema ───────────────────────────────────────────────
+    - cron: '0 2 * * *'     # 02:00 UTC → PUBLIC  (before 03:00 schema)
+    - cron: '0 4 * * *'     # 04:00 UTC → PRIVATE (schema done by 04:00)
+
+    # ── Cluster 3: SEO daily (incl. Sunday weekly runs) ─────────────────────
+    - cron: '0 5 * * *'     # 05:00 UTC → PUBLIC  (before 06:00 seo_daily)
+    - cron: '30 8 * * *'    # 08:30 UTC → PRIVATE (after 08:00 Sun weeklies done)
+
+    # ── Cluster 4: YouTube morning (MWF blog + daily price) ─────────────────
+    - cron: '0 7 * * 1,3,5' # 07:00 UTC Mon/Wed/Fri → PUBLIC  (before 08:00 blog)
+    - cron: '0 10 * * 1,3,5' # 10:00 UTC Mon/Wed/Fri → PRIVATE (after 09:00 price done)
+
+    # ── Cluster 5: Midday / afternoon (biggest cluster) ─────────────────────
+    - cron: '0 11 * * *'    # 11:00 UTC → PUBLIC  (before 12:00 pinterest)
+    - cron: '30 16 * * *'   # 16:30 UTC → PRIVATE (after 15:30 video pin done)
+
+    # ── Cluster 6: Pinterest afternoon ──────────────────────────────────────
+    - cron: '0 16 * * *'    # 16:00 UTC → PUBLIC  (before 17:00 posting)
+    - cron: '30 18 * * *'   # 18:30 UTC → PRIVATE (after 17:30 refresh done)
+
+    # ── Cluster 7: Pinterest evening ────────────────────────────────────────
+    - cron: '0 20 * * *'    # 20:00 UTC → PUBLIC  (before 21:00 posting)
+    - cron: '30 22 * * *'   # 22:30 UTC → PRIVATE (after 21:30 refresh done)
+
   workflow_dispatch:
     inputs:
       action:
-        description: 'Override action (leave blank to auto-detect from time)'
+        description: 'Manual override (auto-detect uses UTC hour to decide)'
         type: choice
         options:
           - auto-detect
@@ -49,21 +98,64 @@ jobs:
         run: |
           ACTION="${{ github.event.inputs.action }}"
           HOUR=$(date -u +%H | sed 's/^0//')
+          MIN=$(date -u +%M | sed 's/^0//')
+          DOW=$(date -u +%u)  # 1=Mon ... 7=Sun
 
           if [ "$ACTION" = "make-public" ]; then
             echo "visibility=public" >> $GITHUB_OUTPUT
+            echo "reason=manual override" >> $GITHUB_OUTPUT
+
           elif [ "$ACTION" = "make-private" ]; then
             echo "visibility=private" >> $GITHUB_OUTPUT
+            echo "reason=manual override" >> $GITHUB_OUTPUT
+
           else
-            # Auto-detect: if current hour is 2–15 UTC → opening run, else closing
-            if [ "$HOUR" -ge 2 ] && [ "$HOUR" -lt 16 ]; then
+            # Open crons fire at: 0,2,5,7(MWF),11,16,20
+            # Close crons fire at: 2:30,4,8:30,10(MWF),16:30,18:30,22:30
+            # Determine open vs close by matching the closest scheduled trigger.
+            # Simple rule: opening triggers are on the hour (:00), closing on :30
+            # except 4,8,10 which are also on :00 — so use explicit hour matching.
+
+            OPEN_HOURS="0 2 5 11 16 20"
+            CLOSE_HOURS="4"
+            IS_OPEN=false
+
+            # :30 minute → always a close trigger
+            if [ "$MIN" -ge 25 ]; then
+              IS_OPEN=false
+            else
+              for h in $OPEN_HOURS; do
+                if [ "$HOUR" = "$h" ]; then
+                  IS_OPEN=true
+                  break
+                fi
+              done
+              # hour 7 is open only Mon/Wed/Fri
+              if [ "$HOUR" = "7" ] && { [ "$DOW" = "1" ] || [ "$DOW" = "3" ] || [ "$DOW" = "5" ]; }; then
+                IS_OPEN=true
+              fi
+              for h in $CLOSE_HOURS; do
+                if [ "$HOUR" = "$h" ]; then
+                  IS_OPEN=false
+                  break
+                fi
+              done
+              # hour 8 close (after :00 → close), hour 10 always close
+              if [ "$HOUR" = "8" ] || [ "$HOUR" = "10" ]; then
+                IS_OPEN=false
+              fi
+            fi
+
+            if [ "$IS_OPEN" = "true" ]; then
               echo "visibility=public" >> $GITHUB_OUTPUT
+              echo "reason=scheduled open window" >> $GITHUB_OUTPUT
             else
               echo "visibility=private" >> $GITHUB_OUTPUT
+              echo "reason=scheduled close window" >> $GITHUB_OUTPUT
             fi
           fi
 
-      - name: Switch all repos to ${{ steps.target.outputs.visibility }}
+      - name: Switch all repos → ${{ steps.target.outputs.visibility }}
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
@@ -71,3 +163,13 @@ jobs:
           python repo_switcher.py \
             --repos all \
             --visibility ${{ steps.target.outputs.visibility }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Auto Visibility Result" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Visibility | ${{ steps.target.outputs.visibility }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Reason | ${{ steps.target.outputs.reason }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| UTC time | $(date -u '+%Y-%m-%d %H:%M') |" >> $GITHUB_STEP_SUMMARY
