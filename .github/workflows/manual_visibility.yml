@@ -1,0 +1,88 @@
+name: Manual Visibility Switch
+
+# ─────────────────────────────────────────────────────────────────────────────
+# On-demand repo visibility control. Trigger this from the GitHub Actions UI.
+#
+# Examples:
+#   • Make seo public in 5 minutes  → repos=seo,  visibility=public,  delay=5
+#   • Make all private now          → repos=all,  visibility=private, delay=0
+#   • Make pinterest public in 2hr  → repos=pinterest, visibility=public, delay=120
+#
+# The workflow runner stays alive during the delay (max 6 hours GitHub limit).
+# For delays longer than ~30 min, prefer scheduling a second manual run instead.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: 'Repos to change: all | seo | pinterest | youtube | seo,pinterest | etc.'
+        required: true
+        default: 'all'
+        type: string
+      visibility:
+        description: 'Target visibility'
+        required: true
+        type: choice
+        options:
+          - public
+          - private
+      delay_minutes:
+        description: 'Delay before applying change (minutes). 0 = immediate. Max ~350.'
+        required: false
+        default: '0'
+        type: string
+
+jobs:
+  manual-switch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # 6hr max — covers any reasonable delay
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Log intention
+        run: |
+          DELAY="${{ github.event.inputs.delay_minutes }}"
+          REPOS="${{ github.event.inputs.repos }}"
+          VIS="${{ github.event.inputs.visibility }}"
+          if [ "$DELAY" = "0" ] || [ -z "$DELAY" ]; then
+            echo "▶ Setting repos [$REPOS] → $VIS immediately"
+          else
+            FIRE=$(date -u -d "+${DELAY} minutes" "+%Y-%m-%d %H:%M UTC" 2>/dev/null || date -u "+%Y-%m-%d %H:%M UTC")
+            echo "⏱ Setting repos [$REPOS] → $VIS in ${DELAY} minute(s) (approx. $FIRE)"
+          fi
+
+      - name: Apply visibility change (with optional delay)
+        env:
+          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
+          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
+        run: |
+          DELAY="${{ github.event.inputs.delay_minutes }}"
+          DELAY=${DELAY:-0}
+
+          python repo_switcher.py \
+            --repos "${{ github.event.inputs.repos }}" \
+            --visibility "${{ github.event.inputs.visibility }}" \
+            --delay-minutes "$DELAY"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Visibility Switch Result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Repos | ${{ github.event.inputs.repos }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Visibility | ${{ github.event.inputs.visibility }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Delay | ${{ github.event.inputs.delay_minutes }} min |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY

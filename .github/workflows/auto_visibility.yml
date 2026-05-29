@@ -1,0 +1,73 @@
+name: Auto Visibility (Scheduled)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduled open/close window for all 3 MeeeShop automation repos.
+#
+# Timeline (UTC):
+#   02:00  → Make ALL repos PUBLIC  (1hr before earliest SEO cron at 03:00)
+#   16:00  → Make ALL repos PRIVATE (after last daily workflow at ~15:30)
+#
+# This keeps repos public for a ~14hr window each day so every scheduled
+# workflow across seo, pinterest, and youtube can fire normally.
+# Disable this repo entirely when you're on a paid plan or don't need it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '0 2 * * *'    # 02:00 UTC daily — open window (make public)
+    - cron: '0 16 * * *'   # 16:00 UTC daily — close window (make private)
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Override action (leave blank to auto-detect from time)'
+        type: choice
+        options:
+          - auto-detect
+          - make-public
+          - make-private
+        default: auto-detect
+
+jobs:
+  switch-visibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine visibility target
+        id: target
+        run: |
+          ACTION="${{ github.event.inputs.action }}"
+          HOUR=$(date -u +%H | sed 's/^0//')
+
+          if [ "$ACTION" = "make-public" ]; then
+            echo "visibility=public" >> $GITHUB_OUTPUT
+          elif [ "$ACTION" = "make-private" ]; then
+            echo "visibility=private" >> $GITHUB_OUTPUT
+          else
+            # Auto-detect: if current hour is 2–15 UTC → opening run, else closing
+            if [ "$HOUR" -ge 2 ] && [ "$HOUR" -lt 16 ]; then
+              echo "visibility=public" >> $GITHUB_OUTPUT
+            else
+              echo "visibility=private" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Switch all repos to ${{ steps.target.outputs.visibility }}
+        env:
+          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
+          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
+        run: |
+          python repo_switcher.py \
+            --repos all \
+            --visibility ${{ steps.target.outputs.visibility }}
