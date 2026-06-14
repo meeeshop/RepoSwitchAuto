@@ -40,8 +40,9 @@ class SecretSanitizer(logging.Filter):
         msg = record.getMessage()
         for secret in self.__class__._values:
             if secret in msg:
-                record.msg = record.msg.replace(secret, "***")
-                record.args = ()
+                msg = msg.replace(secret, "***")
+        record.msg = msg
+        record.args = ()
         return True
 
 
