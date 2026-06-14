@@ -1,83 +1,50 @@
 name: Auto Visibility (Scheduled)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Per-repo precise open/close windows. Each cron slot targets ONLY the repo(s)
-# that actually have workflows scheduled at that time. ALL TIMES UTC.
+# Optimized open/close windows based on actual active workflows (verified 2026-06-14):
 #
-# Source schedules (verified 2026-05-29):
-#   REPO_PINTEREST : 01:00, 01:30, 12:00, 12:30, 17:00, 17:30, 21:00, 21:30
-#   REPO_SEO       : 03:00(daily), 06:00(daily), 07:00(daily+Sun), 08:00(Sun),
-#                    13:00(Tue/Thu), 14:00(Sat/Sun)
-#   REPO_YOUTUBE   : 08:00(MWF blog_automation), 09:00(daily price_update),
-#                    10:00(MWF blog-weekly), 13:00(daily YT shorts),
-#                    14:00(daily video), 15:30(daily video)
+# Workflows schedule:
+#   meeeshop-pinterest : 01:00 (video, analytics), 02:00 (posting), 02:30 (refresh),
+#                        12:00 (video), 14:00 (posting), 14:30 (refresh),
+#                        18:00 (posting), 18:30 (refresh),
+#                        23:00 (posting), 23:30 (refresh)
+#   meeeshop-seo       : 03:00 (schema), 04:00 (metafields), 05:00 (gmc), 06:00 (seo),
+#                        07:00 (price update, linker), 08:00 (flipboard, weekly seo/price),
+#                        12:00 (medium), 13:00 (blog), 13:30 (indexnow), 14:00 (blog, modify)
+#   meeeshop-youtube   : 13:00 (shorts)
 #
-# Window map (open 1hr before first job, close 1hr after last job):
-#   00:00–02:30  pinterest only         (01:00 posting+video, 01:30 refresh)
-#   02:00–04:00  seo only               (03:00 schema_validation daily)
-#   05:00–08:30  seo only               (06:00 seo_daily, 07:00 price+linker, 08:00 Sun)
-#   07:00–10:00  youtube MWF only       (08:00 blog_automation MWF)
-#   08:00–10:30  youtube daily (non-MWF) (09:00 price_update daily — Tue/Thu/Sat/Sun/Mon)
-#   10:00–12:30  youtube MWF extended   (10:00 blog-weekly MWF — window extended to 11:30)
-#   11:00–16:30  pinterest+seo+youtube  (12:00–15:30 across all 3 repos)
-#   16:00–18:30  pinterest only         (17:00 posting, 17:30 refresh)
-#   20:00–22:30  pinterest only         (21:00 posting, 21:30 refresh)
-#
-# NOTE: youtube price_update runs DAILY at 09:00 UTC. On MWF it's covered by the
-# 07:00 MWF open window. On other days (Tue/Thu/Sat/Sun) a dedicated daily open
-# is needed at 08:00 (non-MWF) that closes at 10:30 after the job finishes.
-# On MWF the MWF window stays open until 11:30 to cover blog-weekly at 10:00.
+# Optimized Windows (open 1 hour before first job, close safely with --safe check):
+#   1. Pinterest Night/Early Morning Block (covers 23:00 - 02:30 UTC jobs)
+#      - Open:  22:00 UTC (cron: '0 22 * * *')
+#      - Close: 03:00 UTC (cron: '0 3 * * *') -> pinterest PRIVATE --safe
+#   2. SEO Morning Block (covers 03:00 - 08:00 UTC jobs)
+#      - Open:  02:00 UTC (cron: '0 2 * * *')
+#      - Close: 08:30 UTC (cron: '30 8 * * *') -> seo PRIVATE --safe
+#   3. Midday/Afternoon Cluster (covers 12:00 - 14:30 UTC jobs across all 3 repos)
+#      - Open:  11:00 UTC (cron: '0 11 * * *')
+#      - Close: 15:00 UTC (cron: '0 15 * * *') -> pinterest+seo+youtube PRIVATE --safe
+#   4. Pinterest Afternoon Block (covers 18:00 - 18:30 UTC jobs)
+#      - Open:  17:00 UTC (cron: '0 17 * * *')
+#      - Close: 19:00 UTC (cron: '0 19 * * *') -> pinterest PRIVATE --safe
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
-    # ── Pinterest night: open ────────────────────────────────────────────────
-    - cron: '0 0 * * *'        # 00:00 UTC → pinterest PUBLIC
+    # ── Pinterest Night/Early Morning ──
+    - cron: '0 22 * * *'       # 22:00 UTC → pinterest PUBLIC
+    - cron: '0 3 * * *'        # 03:00 UTC → pinterest PRIVATE (safe)
 
-    # ── Pinterest night: close ───────────────────────────────────────────────
-    - cron: '30 2 * * *'       # 02:30 UTC → pinterest PRIVATE
-
-    # ── SEO schema: open ─────────────────────────────────────────────────────
+    # ── SEO Morning ──
     - cron: '0 2 * * *'        # 02:00 UTC → seo PUBLIC
+    - cron: '30 8 * * *'       # 08:30 UTC → seo PRIVATE (safe)
 
-    # ── SEO schema: close ────────────────────────────────────────────────────
-    - cron: '0 4 * * *'        # 04:00 UTC → seo PRIVATE
+    # ── Midday/Afternoon Cluster ──
+    - cron: '0 11 * * *'       # 11:00 UTC → pinterest, seo, youtube PUBLIC
+    - cron: '0 15 * * *'       # 15:00 UTC → pinterest, seo, youtube PRIVATE (safe)
 
-    # ── SEO daily: open ──────────────────────────────────────────────────────
-    - cron: '0 5 * * *'        # 05:00 UTC → seo PUBLIC
-
-    # ── SEO daily: close ─────────────────────────────────────────────────────
-    - cron: '30 8 * * *'       # 08:30 UTC → seo PRIVATE
-
-    # ── YouTube MWF morning: open ────────────────────────────────────────────
-    - cron: '0 7 * * 1,3,5'    # 07:00 UTC MWF → youtube PUBLIC (covers 08:00 blog_automation)
-
-    # ── YouTube MWF morning: close (extended past 10:00 blog-weekly) ─────────
-    - cron: '30 11 * * 1,3,5'  # 11:30 UTC MWF → youtube PRIVATE (after 10:00 blog-weekly finishes)
-
-    # ── YouTube daily price_update (non-MWF): open ───────────────────────────
-    - cron: '0 8 * * 0,2,4,6'  # 08:00 UTC Sun/Tue/Thu/Sat → youtube PUBLIC (covers 09:00 price_update)
-
-    # ── YouTube daily price_update (non-MWF): close ──────────────────────────
-    - cron: '30 10 * * 0,2,4,6' # 10:30 UTC Sun/Tue/Thu/Sat → youtube PRIVATE
-
-    # ── Midday/afternoon cluster: open ───────────────────────────────────────
-    - cron: '0 11 * * *'       # 11:00 UTC → pinterest+seo+youtube PUBLIC
-
-    # ── Midday/afternoon cluster: close ──────────────────────────────────────
-    - cron: '30 16 * * *'      # 16:30 UTC → pinterest+seo+youtube PRIVATE
-
-    # ── Pinterest afternoon: open ────────────────────────────────────────────
-    - cron: '0 16 * * *'       # 16:00 UTC → pinterest PUBLIC
-
-    # ── Pinterest afternoon: close ───────────────────────────────────────────
-    - cron: '30 18 * * *'      # 18:30 UTC → pinterest PRIVATE
-
-    # ── Pinterest evening: open ──────────────────────────────────────────────
-    - cron: '0 20 * * *'       # 20:00 UTC → pinterest PUBLIC
-
-    # ── Pinterest evening: close ─────────────────────────────────────────────
-    - cron: '30 22 * * *'      # 22:30 UTC → pinterest PRIVATE
+    # ── Pinterest Afternoon ──
+    - cron: '0 17 * * *'       # 17:00 UTC → pinterest PUBLIC
+    - cron: '0 19 * * *'       # 19:00 UTC → pinterest PRIVATE (safe)
 
   # Push to main keeps GitHub's scheduler warm (prevents cold-start skips)
   push:
@@ -96,14 +63,6 @@ on:
           - make-private
         default: auto-detect
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Each job is hardcoded to its exact repo(s) and visibility.
-# Jobs only run when their cron fires — GitHub skips jobs whose cron didn't
-# trigger them (using github.event.schedule matching).
-# workflow_dispatch runs ALL jobs with the chosen action for full manual control.
-# push trigger only runs a no-op keepalive job, not the switcher jobs.
-# ─────────────────────────────────────────────────────────────────────────────
-
 jobs:
 
   # ── Keepalive: runs on push to main only, keeps scheduler warm ────────────
@@ -118,9 +77,9 @@ jobs:
           echo "Triggered by push to main at $(date -u '+%Y-%m-%dT%H:%M:%SZ') UTC." >> $GITHUB_STEP_SUMMARY
           echo "No visibility changes applied. This run exists to keep GitHub's cron scheduler active." >> $GITHUB_STEP_SUMMARY
 
-  # ── Pinterest night open (00:00) ───────────────────────────────────────────
+  # ── Pinterest Night Open (22:00) ───────────────────────────────────────────
   pinterest-night-open:
-    if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 22 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -131,7 +90,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: pinterest → public
         id: switcher
-        if: github.event.schedule == '0 0 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
+        if: github.event.schedule == '0 22 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
@@ -151,24 +110,24 @@ jobs:
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── Pinterest night close (02:30) ──────────────────────────────────────────
+  # ── Pinterest Night Close (03:00 - Safe Polling) ───────────────────────────
   pinterest-night-close:
-    if: github.event.schedule == '30 2 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: pinterest → private
+      - name: pinterest → private (safe)
         id: switcher
-        if: github.event.schedule == '30 2 * * *' || github.event.inputs.action == 'make-private'
+        if: github.event.schedule == '0 3 * * *' || github.event.inputs.action == 'make-private' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos pinterest --visibility private
+        run: python repo_switcher.py --repos pinterest --visibility private --safe
       - name: Summary
         if: always()
         run: |
@@ -180,12 +139,12 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Job | pinterest-night-close |" >> $GITHUB_STEP_SUMMARY
           echo "| Repos | pinterest |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | private |" >> $GITHUB_STEP_SUMMARY
+          echo "| Target visibility | private (safe) |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── SEO schema open (02:00) ────────────────────────────────────────────────
-  seo-schema-open:
+  # ── SEO Morning Open (02:00) ───────────────────────────────────────────────
+  seo-morning-open:
     if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -211,96 +170,30 @@ jobs:
           echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | seo-schema-open |" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | seo-morning-open |" >> $GITHUB_STEP_SUMMARY
           echo "| Repos | seo |" >> $GITHUB_STEP_SUMMARY
           echo "| Target visibility | public |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── SEO schema close (04:00) ───────────────────────────────────────────────
-  seo-schema-close:
-    if: github.event.schedule == '0 4 * * *' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: seo → private
-        id: switcher
-        if: github.event.schedule == '0 4 * * *' || github.event.inputs.action == 'make-private'
-        env:
-          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
-          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos seo --visibility private
-      - name: Summary
-        if: always()
-        run: |
-          TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          STATUS="${{ steps.switcher.outcome }}"
-          if [ "$STATUS" = "success" ]; then ICON="✅"; elif [ "$STATUS" = "skipped" ]; then ICON="⏭️"; else ICON="❌"; fi
-          echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | seo-schema-close |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | seo |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | private |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
-
-  # ── SEO daily open (05:00) ─────────────────────────────────────────────────
-  seo-daily-open:
-    if: github.event.schedule == '0 5 * * *' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: seo → public
-        id: switcher
-        if: github.event.schedule == '0 5 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
-        env:
-          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
-          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos seo --visibility public
-      - name: Summary
-        if: always()
-        run: |
-          TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          STATUS="${{ steps.switcher.outcome }}"
-          if [ "$STATUS" = "success" ]; then ICON="✅"; elif [ "$STATUS" = "skipped" ]; then ICON="⏭️"; else ICON="❌"; fi
-          echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | seo-daily-open |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | seo |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | public |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
-
-  # ── SEO daily close (08:30) ────────────────────────────────────────────────
-  seo-daily-close:
+  # ── SEO Morning Close (08:30 - Safe Polling) ───────────────────────────────
+  seo-morning-close:
     if: github.event.schedule == '30 8 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: seo → private
+      - name: seo → private (safe)
         id: switcher
-        if: github.event.schedule == '30 8 * * *' || github.event.inputs.action == 'make-private'
+        if: github.event.schedule == '30 8 * * *' || github.event.inputs.action == 'make-private' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos seo --visibility private
+        run: python repo_switcher.py --repos seo --visibility private --safe
       - name: Summary
         if: always()
         run: |
@@ -310,145 +203,13 @@ jobs:
           echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | seo-daily-close |" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | seo-morning-close |" >> $GITHUB_STEP_SUMMARY
           echo "| Repos | seo |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | private |" >> $GITHUB_STEP_SUMMARY
+          echo "| Target visibility | private (safe) |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── YouTube MWF open (07:00 Mon/Wed/Fri) ──────────────────────────────────
-  youtube-mwf-open:
-    if: github.event.schedule == '0 7 * * 1,3,5' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: youtube → public
-        id: switcher
-        if: github.event.schedule == '0 7 * * 1,3,5' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
-        env:
-          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
-          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos youtube --visibility public
-      - name: Summary
-        if: always()
-        run: |
-          TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          STATUS="${{ steps.switcher.outcome }}"
-          if [ "$STATUS" = "success" ]; then ICON="✅"; elif [ "$STATUS" = "skipped" ]; then ICON="⏭️"; else ICON="❌"; fi
-          echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | youtube-mwf-open |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | youtube |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | public |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
-
-  # ── YouTube MWF close (11:30 Mon/Wed/Fri — after 10:00 blog-weekly) ────────
-  youtube-mwf-close:
-    if: github.event.schedule == '30 11 * * 1,3,5' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: youtube → private
-        id: switcher
-        if: github.event.schedule == '30 11 * * 1,3,5' || github.event.inputs.action == 'make-private'
-        env:
-          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
-          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos youtube --visibility private
-      - name: Summary
-        if: always()
-        run: |
-          TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          STATUS="${{ steps.switcher.outcome }}"
-          if [ "$STATUS" = "success" ]; then ICON="✅"; elif [ "$STATUS" = "skipped" ]; then ICON="⏭️"; else ICON="❌"; fi
-          echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | youtube-mwf-close |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | youtube |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | private |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
-
-  # ── YouTube daily price_update open (08:00 Sun/Tue/Thu/Sat) ───────────────
-  youtube-daily-open:
-    if: github.event.schedule == '0 8 * * 0,2,4,6' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: youtube → public
-        id: switcher
-        if: github.event.schedule == '0 8 * * 0,2,4,6' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
-        env:
-          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
-          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos youtube --visibility public
-      - name: Summary
-        if: always()
-        run: |
-          TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          STATUS="${{ steps.switcher.outcome }}"
-          if [ "$STATUS" = "success" ]; then ICON="✅"; elif [ "$STATUS" = "skipped" ]; then ICON="⏭️"; else ICON="❌"; fi
-          echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | youtube-daily-open |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | youtube |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | public |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
-
-  # ── YouTube daily price_update close (10:30 Sun/Tue/Thu/Sat) ──────────────
-  youtube-daily-close:
-    if: github.event.schedule == '30 10 * * 0,2,4,6' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: youtube → private
-        id: switcher
-        if: github.event.schedule == '30 10 * * 0,2,4,6' || github.event.inputs.action == 'make-private'
-        env:
-          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
-          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos youtube --visibility private
-      - name: Summary
-        if: always()
-        run: |
-          TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          STATUS="${{ steps.switcher.outcome }}"
-          if [ "$STATUS" = "success" ]; then ICON="✅"; elif [ "$STATUS" = "skipped" ]; then ICON="⏭️"; else ICON="❌"; fi
-          echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | youtube-daily-close |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | youtube |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | private |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
-
-  # ── Midday cluster open (11:00) — pinterest + seo + youtube ───────────────
+  # ── Midday Open (11:00) ────────────────────────────────────────────────────
   midday-open:
     if: github.event.schedule == '0 11 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -459,7 +220,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: pinterest + seo + youtube → public
+      - name: pinterest, seo, youtube → public
         id: switcher
         if: github.event.schedule == '0 11 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
         env:
@@ -481,24 +242,24 @@ jobs:
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── Midday cluster close (16:30) — pinterest + seo + youtube ──────────────
+  # ── Midday Close (15:00 - Safe Polling) ────────────────────────────────────
   midday-close:
-    if: github.event.schedule == '30 16 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 15 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: pinterest + seo + youtube → private
+      - name: pinterest, seo, youtube → private (safe)
         id: switcher
-        if: github.event.schedule == '30 16 * * *' || github.event.inputs.action == 'make-private'
+        if: github.event.schedule == '0 15 * * *' || github.event.inputs.action == 'make-private' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos pinterest,seo,youtube --visibility private
+        run: python repo_switcher.py --repos pinterest,seo,youtube --visibility private --safe
       - name: Summary
         if: always()
         run: |
@@ -510,13 +271,13 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Job | midday-close |" >> $GITHUB_STEP_SUMMARY
           echo "| Repos | pinterest, seo, youtube |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | private |" >> $GITHUB_STEP_SUMMARY
+          echo "| Target visibility | private (safe) |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── Pinterest afternoon open (16:00) ──────────────────────────────────────
+  # ── Pinterest Afternoon Open (17:00) ───────────────────────────────────────
   pinterest-afternoon-open:
-    if: github.event.schedule == '0 16 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 17 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -527,7 +288,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: pinterest → public
         id: switcher
-        if: github.event.schedule == '0 16 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
+        if: github.event.schedule == '0 17 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
@@ -547,24 +308,24 @@ jobs:
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── Pinterest afternoon close (18:30) ─────────────────────────────────────
+  # ── Pinterest Afternoon Close (19:00 - Safe Polling) ───────────────────────
   pinterest-afternoon-close:
-    if: github.event.schedule == '30 18 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 19 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: pinterest → private
+      - name: pinterest → private (safe)
         id: switcher
-        if: github.event.schedule == '30 18 * * *' || github.event.inputs.action == 'make-private'
+        if: github.event.schedule == '0 19 * * *' || github.event.inputs.action == 'make-private' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos pinterest --visibility private
+        run: python repo_switcher.py --repos pinterest --visibility private --safe
       - name: Summary
         if: always()
         run: |
@@ -576,72 +337,6 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Job | pinterest-afternoon-close |" >> $GITHUB_STEP_SUMMARY
           echo "| Repos | pinterest |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | private |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
-
-  # ── Pinterest evening open (20:00) ────────────────────────────────────────
-  pinterest-evening-open:
-    if: github.event.schedule == '0 20 * * *' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: pinterest → public
-        id: switcher
-        if: github.event.schedule == '0 20 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
-        env:
-          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
-          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos pinterest --visibility public
-      - name: Summary
-        if: always()
-        run: |
-          TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          STATUS="${{ steps.switcher.outcome }}"
-          if [ "$STATUS" = "success" ]; then ICON="✅"; elif [ "$STATUS" = "skipped" ]; then ICON="⏭️"; else ICON="❌"; fi
-          echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | pinterest-evening-open |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | pinterest |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | public |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
-
-  # ── Pinterest evening close (22:30) ───────────────────────────────────────
-  pinterest-evening-close:
-    if: github.event.schedule == '30 22 * * *' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: pinterest → private
-        id: switcher
-        if: github.event.schedule == '30 22 * * *' || github.event.inputs.action == 'make-private'
-        env:
-          ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
-          ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos pinterest --visibility private
-      - name: Summary
-        if: always()
-        run: |
-          TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          STATUS="${{ steps.switcher.outcome }}"
-          if [ "$STATUS" = "success" ]; then ICON="✅"; elif [ "$STATUS" = "skipped" ]; then ICON="⏭️"; else ICON="❌"; fi
-          echo "## Visibility Change Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | pinterest-evening-close |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | pinterest |" >> $GITHUB_STEP_SUMMARY
-          echo "| Target visibility | private |" >> $GITHUB_STEP_SUMMARY
+          echo "| Target visibility | private (safe) |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
