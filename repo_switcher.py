@@ -84,7 +84,31 @@ def resolve_repos(repos_arg: str, repo_map: dict) -> list[str]:
     return resolved
 
 
+def get_current_visibility(owner: str, repo: str, token: str) -> str:
+    url = f"https://api.github.com/repos/{owner}/{repo}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            body = json.loads(resp.read().decode())
+            return body.get("visibility", "unknown")
+    except Exception as e:
+        log.error("Failed to fetch current visibility for %s/%s: %s", owner, repo, e)
+        return "unknown"
+
+
 def set_visibility(owner: str, repo: str, visibility: str, token: str) -> bool:
+    current = get_current_visibility(owner, repo, token)
+    if current == visibility:
+        log.info("[OK] %s/%s is already '%s' (no change needed)", owner, repo, visibility)
+        return True
+
     url = f"https://api.github.com/repos/{owner}/{repo}"
     payload = json.dumps({"visibility": visibility}).encode()
     req = urllib.request.Request(
@@ -98,16 +122,28 @@ def set_visibility(owner: str, repo: str, visibility: str, token: str) -> bool:
             "Content-Type": "application/json",
         },
     )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            body = json.loads(resp.read().decode())
-            actual = body.get("visibility", "unknown")
-            log.info("[OK] %s/%s → %s", owner, repo, actual)
-            return True
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        log.error("[FAIL] %s/%s — HTTP %s: %s", owner, repo, e.code, body)
-        return False
+    
+    retries = 5
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(req) as resp:
+                body = json.loads(resp.read().decode())
+                actual = body.get("visibility", "unknown")
+                log.info("[OK] %s/%s → %s", owner, repo, actual)
+                return True
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            if e.code == 422 and "visibility change is still in progress" in body:
+                if attempt < retries - 1:
+                    log.warning("[RETRY] %s/%s — Visibility change in progress. Retrying in 15s...", owner, repo)
+                    time.sleep(15)
+                    continue
+            log.error("[FAIL] %s/%s — HTTP %s: %s", owner, repo, e.code, body)
+            return False
+        except Exception as e:
+            log.error("[FAIL] %s/%s — Error: %s", owner, repo, e)
+            return False
+
 
 
 def get_active_runs(owner: str, repo: str, token: str) -> list[dict]:
