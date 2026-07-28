@@ -11,6 +11,7 @@ Repos shorthand (aliases resolved from secrets.enc at runtime):
     seo        → REPO_SEO value in secrets.enc
     pinterest  → REPO_PINTEREST value in secrets.enc
     youtube    → REPO_YOUTUBE value in secrets.enc
+    fb         → REPO_FB value in secrets.enc
 """
 
 import argparse
@@ -32,13 +33,21 @@ log = logging.getLogger(__name__)
 
 def _load_config():
     from secrets_manager import get_secret
+
+    def _safe_get(key: str, default: str) -> str:
+        try:
+            return get_secret(key)
+        except Exception:
+            return default
+
     return {
         "owner": get_secret("GITHUB_OWNER"),
         "token": get_secret("GITHUB_PAT"),
         "repo_map": {
-            "seo":       get_secret("REPO_SEO"),
-            "pinterest": get_secret("REPO_PINTEREST"),
-            "youtube":   get_secret("REPO_YOUTUBE"),
+            "seo":       _safe_get("REPO_SEO", "meeeshop-seo"),
+            "pinterest": _safe_get("REPO_PINTEREST", "meeeshop-pinterest"),
+            "youtube":   _safe_get("REPO_YOUTUBE", "meeeshop-youtube"),
+            "fb":        _safe_get("REPO_FB", "meeeshop-FB"),
         },
     }
 
@@ -48,7 +57,7 @@ def parse_args():
     p.add_argument(
         "--repos",
         default="all",
-        help="Comma-separated: seo,pinterest,youtube or 'all'",
+        help="Comma-separated: seo,pinterest,youtube,fb or 'all'",
     )
     p.add_argument(
         "--visibility",
