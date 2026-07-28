@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       repos:
-        description: 'Repos to change: all | seo | pinterest | youtube | seo,pinterest | etc.'
+        description: 'Repos to change: all | seo | pinterest | youtube | fb | seo,pinterest | etc.'
         required: true
         default: 'all'
         type: string

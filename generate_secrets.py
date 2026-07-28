@@ -90,6 +90,7 @@ def main():
         ("REPO_SEO",        "SEO repo name (just the repo name, no owner prefix)", True),
         ("REPO_PINTEREST",  "Pinterest repo name", True),
         ("REPO_YOUTUBE",    "YouTube repo name", True),
+        ("REPO_FB",         "Facebook repo name (e.g. meeeshop-FB)", False),
     ]
 
     for key, label, required in fields:
