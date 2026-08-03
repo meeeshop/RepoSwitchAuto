@@ -1,5 +1,16 @@
 .env
+.env.*
+*.env
+.env.local
+.env.*.local
+key.txt
+*.key
+*.pem
+.enc.txt
 __pycache__/
 *.pyc
 *.pyo
 .python-version
+*.log
+*.png
+*.html
