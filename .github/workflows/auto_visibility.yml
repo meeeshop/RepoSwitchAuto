@@ -13,31 +13,32 @@ name: Auto Visibility (Scheduled)
 #                        12:00 (medium), 13:00 (blog), 13:30 (indexnow), 14:00 (blog, modify)
 #   meeeshop-youtube   : 13:00 (shorts)
 #   meeeshop-fb        : 17:00 (facebook post & reels), 00:00 (facebook post & reels)
+#   meeeshop-snapchat  : 16:30 (spotlight & stories), 00:00 (spotlight & stories)
 #
 # Optimized Windows (open 1 hour before first job, close safely with --safe check):
-#   1. Pinterest & FB Night/Early Morning Block (covers 23:00 - 02:30 UTC jobs & FB 00:00 UTC job)
+#   1. Pinterest, FB & Snapchat Night/Early Morning Block (covers 23:00 - 02:30 UTC jobs, FB 00:00 UTC & Snapchat 00:00 UTC jobs)
 #      - Open:  22:00 UTC (cron: '0 22 * * *')
-#      - Close: 03:00 UTC (cron: '0 3 * * *') -> pinterest, fb PRIVATE --safe
+#      - Close: 03:00 UTC (cron: '0 3 * * *') -> pinterest, fb, snapchat PRIVATE --safe
 #   2. SEO Morning Block (covers 03:00 - 08:00 UTC jobs)
 #      - Open:  02:00 UTC (cron: '0 2 * * *')
 #      - Close: 08:30 UTC (cron: '30 8 * * *') -> seo PRIVATE --safe
 #   3. Midday/Afternoon Cluster (covers 12:00 - 14:30 UTC jobs across all 3 repos)
 #      - Open:  11:00 UTC (cron: '0 11 * * *')
 #      - Close: 15:00 UTC (cron: '0 15 * * *') -> pinterest+seo+youtube PRIVATE --safe
-#   4. FB Afternoon Block & Pinterest Afternoon Block (covers FB 17:00 UTC & Pinterest 18:00 - 18:30 UTC jobs)
-#      - FB Open:        16:00 UTC (cron: '0 16 * * *') -> fb PUBLIC
-#      - Pinterest Open: 17:00 UTC (cron: '0 17 * * *') -> pinterest PUBLIC
-#      - Close:          19:00 UTC (cron: '0 19 * * *') -> pinterest, fb PRIVATE --safe
+#   4. FB, Snapchat & Pinterest Afternoon Block (covers Snapchat 16:30 UTC, FB 17:00 UTC & Pinterest 18:00 - 18:30 UTC jobs)
+#      - FB & Snapchat Open: 16:00 UTC (cron: '0 16 * * *') -> fb, snapchat PUBLIC
+#      - Pinterest Open:     17:00 UTC (cron: '0 17 * * *') -> pinterest PUBLIC
+#      - Close:              19:00 UTC (cron: '0 19 * * *') -> pinterest, fb, snapchat PRIVATE --safe
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
-    # ── FB Afternoon ──
-    - cron: '0 16 * * *'       # 16:00 UTC → fb PUBLIC
+    # ── FB & Snapchat Afternoon ──
+    - cron: '0 16 * * *'       # 16:00 UTC → fb, snapchat PUBLIC
 
-    # ── Pinterest Night & FB Night ──
-    - cron: '0 22 * * *'       # 22:00 UTC → pinterest, fb PUBLIC
-    - cron: '0 3 * * *'        # 03:00 UTC → pinterest, fb PRIVATE (safe)
+    # ── Pinterest, FB & Snapchat Night ──
+    - cron: '0 22 * * *'       # 22:00 UTC → pinterest, fb, snapchat PUBLIC
+    - cron: '0 3 * * *'        # 03:00 UTC → pinterest, fb, snapchat PRIVATE (safe)
 
     # ── SEO Morning ──
     - cron: '0 2 * * *'        # 02:00 UTC → seo PUBLIC
@@ -82,7 +83,7 @@ jobs:
           echo "Triggered by push at $(date -u '+%Y-%m-%dT%H:%M:%SZ') UTC." >> $GITHUB_STEP_SUMMARY
           echo "No visibility changes applied. This run exists to keep GitHub's cron scheduler active." >> $GITHUB_STEP_SUMMARY
 
-  # ── FB Afternoon Open (16:00) ──────────────────────────────────────────────
+  # ── FB & Snapchat Afternoon Open (16:00) ───────────────────────────────────
   fb-afternoon-open:
     if: github.event.schedule == '0 16 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -93,13 +94,13 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: fb → public
+      - name: fb, snapchat → public
         id: switcher
         if: github.event.schedule == '0 16 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos fb --visibility public
+        run: python repo_switcher.py --repos fb,snapchat --visibility public
       - name: Summary
         if: always()
         run: |
@@ -110,12 +111,12 @@ jobs:
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Job | fb-afternoon-open |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | fb |" >> $GITHUB_STEP_SUMMARY
+          echo "| Repos | fb, snapchat |" >> $GITHUB_STEP_SUMMARY
           echo "| Target visibility | public |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── Pinterest & FB Night Open (22:00) ──────────────────────────────────────
+  # ── Pinterest, FB & Snapchat Night Open (22:00) ────────────────────────────
   pinterest-night-open:
     if: github.event.schedule == '0 22 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -126,13 +127,13 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: pinterest, fb → public
+      - name: pinterest, fb, snapchat → public
         id: switcher
         if: github.event.schedule == '0 22 * * *' || github.event.inputs.action == 'make-public' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos pinterest,fb --visibility public
+        run: python repo_switcher.py --repos pinterest,fb,snapchat --visibility public
       - name: Summary
         if: always()
         run: |
@@ -143,12 +144,12 @@ jobs:
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Job | pinterest-night-open |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | pinterest, fb |" >> $GITHUB_STEP_SUMMARY
+          echo "| Repos | pinterest, fb, snapchat |" >> $GITHUB_STEP_SUMMARY
           echo "| Target visibility | public |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── Pinterest & FB Night Close (03:00 - Safe Polling) ──────────────────────
+  # ── Pinterest, FB & Snapchat Night Close (03:00 - Safe Polling) ────────────
   pinterest-night-close:
     if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -159,13 +160,13 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: pinterest, fb → private (safe)
+      - name: pinterest, fb, snapchat → private (safe)
         id: switcher
         if: github.event.schedule == '0 3 * * *' || github.event.inputs.action == 'make-private' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos pinterest,fb --visibility private --safe
+        run: python repo_switcher.py --repos pinterest,fb,snapchat --visibility private --safe
       - name: Summary
         if: always()
         run: |
@@ -176,7 +177,7 @@ jobs:
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Job | pinterest-night-close |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | pinterest, fb |" >> $GITHUB_STEP_SUMMARY
+          echo "| Repos | pinterest, fb, snapchat |" >> $GITHUB_STEP_SUMMARY
           echo "| Target visibility | private (safe) |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
@@ -346,7 +347,7 @@ jobs:
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY
 
-  # ── Pinterest & FB Afternoon Close (19:00 - Safe Polling) ─────────────────
+  # ── Pinterest, FB & Snapchat Afternoon Close (19:00 - Safe Polling) ───────
   pinterest-afternoon-close:
     if: github.event.schedule == '0 19 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -357,13 +358,13 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: pinterest, fb → private (safe)
+      - name: pinterest, fb, snapchat → private (safe)
         id: switcher
         if: github.event.schedule == '0 19 * * *' || github.event.inputs.action == 'make-private' || github.event.inputs.action == 'auto-detect'
         env:
           ENCRYPTION_KEY_PRIMARY: ${{ secrets.ENCRYPTION_KEY_PRIMARY }}
           ENCRYPTION_KEY_FALLBACK: ${{ secrets.ENCRYPTION_KEY_FALLBACK }}
-        run: python repo_switcher.py --repos pinterest,fb --visibility private --safe
+        run: python repo_switcher.py --repos pinterest,fb,snapchat --visibility private --safe
       - name: Summary
         if: always()
         run: |
@@ -374,7 +375,7 @@ jobs:
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Job | pinterest-afternoon-close |" >> $GITHUB_STEP_SUMMARY
-          echo "| Repos | pinterest, fb |" >> $GITHUB_STEP_SUMMARY
+          echo "| Repos | pinterest, fb, snapchat |" >> $GITHUB_STEP_SUMMARY
           echo "| Target visibility | private (safe) |" >> $GITHUB_STEP_SUMMARY
           echo "| Time (UTC) | $TS |" >> $GITHUB_STEP_SUMMARY
           echo "| Result | $ICON $STATUS |" >> $GITHUB_STEP_SUMMARY

@@ -91,6 +91,7 @@ def main():
         ("REPO_PINTEREST",  "Pinterest repo name", True),
         ("REPO_YOUTUBE",    "YouTube repo name", True),
         ("REPO_FB",         "Facebook repo name (e.g. meeeshop-FB)", False),
+        ("REPO_SNAPCHAT",   "Snapchat repo name (e.g. meeeshop-snapchat)", False),
     ]
 
     for key, label, required in fields:

@@ -12,6 +12,7 @@ Repos shorthand (aliases resolved from secrets.enc at runtime):
     pinterest  → REPO_PINTEREST value in secrets.enc
     youtube    → REPO_YOUTUBE value in secrets.enc
     fb         → REPO_FB value in secrets.enc
+    snapchat   → REPO_SNAPCHAT value in secrets.enc
 """
 
 import argparse
@@ -48,6 +49,7 @@ def _load_config():
             "pinterest": _safe_get("REPO_PINTEREST", "meeeshop-pinterest"),
             "youtube":   _safe_get("REPO_YOUTUBE", "meeeshop-youtube"),
             "fb":        _safe_get("REPO_FB", "meeeshop-FB"),
+            "snapchat":  _safe_get("REPO_SNAPCHAT", "meeeshop-snapchat"),
         },
     }
 
@@ -57,7 +59,7 @@ def parse_args():
     p.add_argument(
         "--repos",
         default="all",
-        help="Comma-separated: seo,pinterest,youtube,fb or 'all'",
+        help="Comma-separated: seo,pinterest,youtube,fb,snapchat or 'all'",
     )
     p.add_argument(
         "--visibility",
